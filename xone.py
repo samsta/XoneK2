@@ -325,11 +325,11 @@ class MixerWithDevices(MixerComponent):
         device_comp.update()
 
 
-class XoneK2(ControlSurface):
+class XoneK2_DJ(ControlSurface):
     def __init__(self, instance):
         global g_logger
         g_logger = self.log_message
-        super(XoneK2, self).__init__(instance, False)
+        super(XoneK2_DJ, self).__init__(instance, False)
         with self.component_guard():
             self._set_suppress_rebuild_requests(True)
             self.init_session()

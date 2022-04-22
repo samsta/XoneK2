@@ -1,2 +1,3 @@
 *.swp
 .livedir
+__pycache__/
