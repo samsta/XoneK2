@@ -1,4 +1,5 @@
 import time
+import inspect
 from functools import partial
 
 import Live
@@ -16,7 +17,7 @@ from _Framework.TransportComponent import TransportComponent
 
 
 g_logger = None
-DEBUG = False
+DEBUG = True
 
 
 def log(msg):
@@ -72,10 +73,43 @@ def button(notenr, name=None):
         rv.name = name
     return rv
 
+class EqGainEncoder(EncoderElement):
+    """
+    Gain encoder that maps values in a way so 0dB is in the center
+    """
+    def __init__(self, cc):
+        super(EqGainEncoder,self).__init__(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
+        self.add_value_listener(self.handle_encoder_turn)
 
-def fader(notenr):
-    return SliderElement(MIDI_CC_TYPE, CHANNEL, notenr)
+    def handle_encoder_turn(self, value):
+        zero_db = 0.85
+        minus_6_db = 0.7
+        if value < 15:
+            fval = minus_6_db * (value/15)
+        elif value < 60:
+            fval = minus_6_db + (zero_db - minus_6_db) * ((value-15)/45)
+        elif value > 68:
+            fval = zero_db + (1 - zero_db) * ((value - 68)/60)
+        else:
+            fval = zero_db
 
+        if (self.mapped_parameter() != None):
+            self._mapped_param = self.mapped_parameter()
+            self.release_parameter()
+
+        if self._mapped_param != None:
+            self._mapped_param.value = fval
+            log("turn %d, mapped %f" % (value, self._mapped_param.value))
+
+class Fader(SliderElement):
+    def __init__(self, notenr, max=1.0):
+        super(Fader,self).__init__(MIDI_CC_TYPE, CHANNEL, notenr)
+        self.add_value_listener(self.handle_slider)
+        self.max = max
+
+    def handle_slider(self, value):
+        if self.mapped_parameter() != None and self.mapped_parameter().value > self.max:
+            self.mapped_parameter().value = self.max
 
 def knob(cc):
     return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
@@ -83,6 +117,7 @@ def knob(cc):
 
 def encoder(cc):
     return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
+
 
 
 class DynamicEncoder(EncoderElement):
@@ -119,35 +154,93 @@ class DynamicEncoder(EncoderElement):
         self.last_event_value = value
 
 
-class CustomTransportComponent(TransportComponent):
-    """TransportComponent with custom tempo support"""
 
-    def _replace_controller(self, attrname, cb, new_control):
-        old_control = getattr(self, attrname, None)
-        if old_control is not None:
-            old_control.remove_value_listener(cb)
-        setattr(self, attrname, new_control)
-        new_control.add_value_listener(cb)
-        self.update()
+class TempoEncoder(EncoderElement):
+    def __init__(self, cc, button_cc, transport, growth=1.15, timeout=0.2, max_sensitivity=100):
+        """
+        target (DeviceParameter)
+        growth (float): How much the paramter change accelerates with
+            quick turns.
+        timeout (float): Seconds. Acceleration will reset after this
+            amount of time passes between encoder events.
+        """
+        self.growth = growth
+        self.timeout = timeout
+        self.encoder = encoder(cc)
+        self.button = button(button_cc)
+        self.encoder.add_value_listener(self.handle_encoder_turn)
+        self.button.add_value_listener(self.handle_button)
+        self.sensitivity = 1.0
+        self.last_event_value = None
+        self.last_event_time = 0
+        self.transport = transport
+        self.max_sensitivity = max_sensitivity
+        self.button_pressed = True
 
-    def set_tempo_bumpers(self, bump_up_control, bump_down_control):
-        self._replace_controller('_tempo_bump_up_control',
-                self._tempo_up_value, bump_up_control)
-        self._replace_controller('_tempo_bump_down_control',
-                self._tempo_down_value, bump_down_control)
+    def handle_button(self, value):
+        self.button_pressed = value >= 64
+        now = time.time()
+        # tap if button pressed, but only if there hasn't been a turn (nudge/tempo change) in a while
+        if self.button_pressed and now - self.last_event_time > 1:
+            self.transport.song().tap_tempo()
+        else:
+            self.transport.song().nudge_up = False
+            self.transport.song().nudge_down = False
 
-    def _tempo_shift(self, amount):
-        old_tempo = self.song().tempo
-        self.song().tempo = max(20, min(999, old_tempo + amount))
+    def handle_encoder_turn(self, value):
+        now = time.time()
 
-    def _tempo_up_value(self, value):
-        if value != 0:
-            self._tempo_shift(1.0)
+        # nudge if button pressed, otherwise adjust tempo
+        if self.button_pressed:
+            if value < 64:
+                self.transport.song().nudge_up = True
+                self.transport.song().nudge_down = False
+            else:
+                self.transport.song().nudge_down = True
+                self.transport.song().nudge_up = False
+        else:
+            if now - self.last_event_time < self.timeout and value == self.last_event_value:
+                if self.sensitivity < self.max_sensitivity:
+                    self.sensitivity *= self.growth
+                if self.sensitivity >= self.max_sensitivity:
+                    self.sensitivity = self.max_sensitivity
+            else:
+                self.sensitivity = 1.0
+            delta = (1 if value < 64 else -1)
+            delta *= self.sensitivity/100
+            new_value = self.transport.song().tempo + delta
+            self.transport.song().tempo = max(min(250, new_value), 20)
+        self.last_event_time = now
+        self.last_event_value = value
 
-    def _tempo_down_value(self, value):
-        if value != 0:
-            self._tempo_shift(-1.0)
 
+
+class SceneSelector(EncoderElement):
+    def __init__(self, cc, button_cc, stop_button_cc, song):
+        self.encoder = encoder(cc)
+        self.button = button(button_cc)
+        self.stop_button = button(stop_button_cc)
+        self.encoder.add_value_listener(self.handle_encoder_turn)
+        self.button.add_value_listener(self.handle_button)
+        self.stop_button.add_value_listener(self.handle_stop_button)
+        self.song = song
+
+    def handle_button(self, value):
+        self.song.view.selected_scene.fire()
+
+    def handle_stop_button(self, value):
+        self.song.stop_all_clips()
+
+    def handle_encoder_turn(self, value):
+        scene_index = list(self.song.scenes).index(self.song.view.selected_scene)
+        if value < 64:
+            scene_index += 1
+        else:
+            scene_index -= 1
+
+        if scene_index in range(len(self.song.scenes)):
+            self.song.view.selected_scene = self.song.scenes[scene_index]
+        
 
 class MixerWithDevices(MixerComponent):
     def __init__(self, num_tracks, num_returns=0, device_select=None, device_encoders=None):
@@ -187,6 +280,7 @@ class MixerWithDevices(MixerComponent):
         self.active_track = track
         self.light_up(self.active_track)
         self.attach_encoders()
+        self.song().view.selected_track = self.song().visible_tracks[track]
 
     def light_up(self, which_track):
         if self.device_select:
@@ -196,6 +290,7 @@ class MixerWithDevices(MixerComponent):
 
     def attach_encoders(self):
         for control, target in zip(self.encoders, self.devices[self.active_track]["params"]):
+            log("c %s t %s" % (control, target))
             control.target = target
 
     def get_active_tracks(self):
@@ -270,7 +365,7 @@ class MixerWithDevices(MixerComponent):
                 if dev.class_name not in EQ_DEVICES:
                     device = dev
                     log("using %s" % device.class_name)
-                    self.devices[i]["params"] = device.parameters[1:len(self.encoders)]
+                    self.devices[i]["params"] = device.parameters[1:len(self.encoders)+1]
                     self.devices[i]["toggle"] = device.parameters[0]
                     break
         device_comp.set_lock_to_device(True, device)
@@ -308,7 +403,9 @@ class MixerWithDevices(MixerComponent):
         if track.devices:
             # Find the first EQ device.
             for dev in track.devices:
+                log("examine device %s" % dev.class_name)
                 if dev.class_name in EQ_DEVICES:
+                    log("using it")
                     device = dev
                     break
         device_comp.set_lock_to_device(True, device)
@@ -334,20 +431,18 @@ class XoneK2_DJ(ControlSurface):
             self._set_suppress_rebuild_requests(True)
             self.init_session()
             self.init_mixer()
-            self.init_matrix()
+            #self.init_matrix()
             self.init_tempo()
 
             # connect mixer to session
-            self.session.set_mixer(self.mixer)
-            self.session.update()
-            self.set_highlighting_session_component(self.session)
+            #self.session.set_mixer(self.mixer)
+            #self.session.update()
+            #self.set_highlighting_session_component(self.session)
             self._set_suppress_rebuild_requests(False)
 
     def init_session(self):
-        self.session = SessionComponent(NUM_TRACKS, NUM_SCENES)
-        self.session.name = 'Session'
-        self.session.set_scene_bank_buttons(button(BUTTON_LL), button(BUTTON_LR))
-        self.session.update()
+        self.scene_selector = SceneSelector(ENCODER_LR, PUSH_ENCODER_LR, BUTTON_LR, self.song())
+
 
     def init_mixer(self):
         self.mixer = MixerWithDevices(
@@ -359,26 +454,31 @@ class XoneK2_DJ(ControlSurface):
 
         self.song().view.selected_track = self.mixer.channel_strip(0)._track
 
+        volume_limit = 0.85 # 0dB
         for i in range(NUM_TRACKS):
-            self.mixer.channel_strip(i).set_volume_control(fader(FADERS[i]))
-            self.mixer.channel_strip(i).set_solo_button(button(BUTTONS3[i]))
+            self.mixer.channel_strip(i).set_volume_control(Fader(FADERS[i], volume_limit))
+            #self.mixer.channel_strip(i).set_solo_button(button(BUTTONS3[i]))
             self.mixer.set_eq_controls(i, (
-                knob(KNOBS3[i]),
-                knob(KNOBS2[i]),
-                knob(KNOBS1[i])))
-            self.mixer.set_device_controls(i, button(BUTTONS1[i]))
+                EqGainEncoder(KNOBS3[i]),
+                EqGainEncoder(KNOBS2[i]),
+                EqGainEncoder(KNOBS1[i]),
+                None,
+                button(BUTTONS3[i]),
+                button(BUTTONS2[i]),
+                button(BUTTONS1[i])))
+            #self.mixer.set_device_controls(i, button(BUTTONS1[i]))
 
-        self.master_encoder = DynamicEncoder(
-            ENCODER_LR, self.song().master_track.mixer_device.volume)
-        self.cue_encoder = DynamicEncoder(
-            ENCODER_LL, self.song().master_track.mixer_device.cue_volume)
+        #self.master_encoder = DynamicEncoder(
+        #    ENCODER_LR, self.song().master_track.mixer_device.volume)
+        #self.cue_encoder = DynamicEncoder(
+        #    ENCODER_LL, self.song().master_track.mixer_device.cue_volume)
         self.mixer.update()
 
     def init_matrix(self):
         self.matrix = ButtonMatrixElement()
 
         for scene_index in range(NUM_SCENES):
-            scene = self.session.scene(scene_index)
+            scene = self.session.scene(scene_index) 
             scene.name = 'Scene ' + str(scene_index)
             button_row = []
             for track_index in range(NUM_TRACKS):
@@ -391,9 +491,9 @@ class XoneK2_DJ(ControlSurface):
                 clip_slot.set_started_value(64)
                 clip_slot.set_launch_button(b)
             self.matrix.add_row(tuple(button_row))
-        stop_buttons = [button(note_nr) for note_nr in BUTTONS2]
-        self.session.set_stop_track_clip_buttons(stop_buttons)
+        #stop_buttons = [button(note_nr) for note_nr in BUTTONS2]
+        #self.session.set_stop_track_clip_buttons(stop_buttons)
 
     def init_tempo(self):
-        self.transport = CustomTransportComponent()
-        self.transport.set_tempo_bumpers(button(PUSH_ENCODER_LR), button(PUSH_ENCODER_LL))
+        self.transport = TransportComponent()
+        self.tempo = TempoEncoder(ENCODER_LL, PUSH_ENCODER_LL, self.transport)
