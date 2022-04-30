@@ -19,9 +19,6 @@ from _Framework.TransportComponent import TransportComponent
 g_logger = None
 DEBUG = True
 
-shift_is_pressed = False
-
-
 def log(msg):
     global g_logger
     if DEBUG:
@@ -70,6 +67,14 @@ class Color():
     YELLOW = 36
     GREEN = 72
 
+class ColorBottomRow():
+    """
+        The bottom row button 'Layer' and 'Exit Setup' have a slightly different note offset for the other colors
+    """
+    RED = 0
+    YELLOW = 4
+    GREEN = 8
+
 class ClipState():
     STOPPED = 0
     TRIGGERED = 1
@@ -84,6 +89,37 @@ class ButtonWithLight(ButtonElement):
     def release_parameter(self):
         super(ButtonWithLight, self).release_parameter()
         self.send_midi((144 + CHANNEL, self.notenr, 0)) # for some reason send_value() doesn't work reliably, so send raw MIDI
+
+class MultiShiftButton(ButtonElement):
+    def __init__(self, notenr, max_states=4, colormap=ColorBottomRow()):
+        super(MultiShiftButton, self).__init__(True, MIDI_NOTE_TYPE, CHANNEL, notenr)
+        self._max_states = max_states
+        self._state = 0
+        self._notenr = notenr
+        self._colormap = colormap
+        self.add_value_listener(self._on_push)
+        self._update_light()
+
+    def state(self):
+        return self._state
+
+    def _on_push(self, value):
+        if value > 0:
+            self._state = (self._state + 1) % self._max_states
+        self._update_light()
+
+    def _update_light(self):
+        if self._state == 0:
+            self.send_midi((144 + CHANNEL, self._notenr + self._colormap.RED, 0))
+            self.send_midi((144 + CHANNEL, self._notenr + self._colormap.YELLOW, 0))
+            self.send_midi((144 + CHANNEL, self._notenr + self._colormap.GREEN, 0))
+        elif self._state == 1:
+            self.send_midi((144 + CHANNEL, self._notenr + self._colormap.RED, 127))
+        elif self._state == 2:
+            self.send_midi((144 + CHANNEL, self._notenr + self._colormap.YELLOW, 127))
+        elif self._state == 3:
+            self.send_midi((144 + CHANNEL, self._notenr + self._colormap.GREEN, 127))
+
 
 def button(notenr, name=None):
     rv = ButtonWithLight(notenr)
@@ -172,10 +208,31 @@ class DynamicEncoder(EncoderElement):
         self.last_event_time = now
         self.last_event_value = value
 
+class MultiplexedEncoder(EncoderElement):
+    def __init__(self, encoders, shift_button, cc, button_cc):
+        super(MultiplexedEncoder, self).__init__(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
+        self._encoders = encoders
+        self._shift_button = shift_button
+        self._button = button(button_cc)
+        self._button.add_value_listener(self._handle_button)
+        self.add_value_listener(self._handle_encoder_turn)
+
+    def _handle_encoder_turn(self, value):
+        state = self._shift_button.state()
+        if state < len(self._encoders):
+            self._encoders[state].handle_encoder_turn(value)
+
+    def _handle_button(self, value):
+        state = self._shift_button.state()
+        if state < len(self._encoders):
+            enc = self._encoders[state]
+            if hasattr(enc, 'handle_button'):
+                enc.handle_button(value)
 
 
-class TempoEncoder(EncoderElement):
-    def __init__(self, cc, button_cc, transport, growth=1.15, timeout=0.2, max_sensitivity=100):
+
+class TempoEncoder(DynamicEncoder):
+    def __init__(self, transport, growth=1.15, timeout=0.2, max_sensitivity=100):
         """
         target (DeviceParameter)
         growth (float): How much the paramter change accelerates with
@@ -183,13 +240,7 @@ class TempoEncoder(EncoderElement):
         timeout (float): Seconds. Acceleration will reset after this
             amount of time passes between encoder events.
         """
-        self.growth = growth
-        self.timeout = timeout
-        self.encoder = encoder(cc)
-        self.alternate_encoder = DynamicEncoder(None, transport.song().master_track.mixer_device.cue_volume)
-        self.button = button(button_cc)
-        self.encoder.add_value_listener(self.handle_encoder_turn)
-        self.button.add_value_listener(self.handle_button)
+        super(TempoEncoder, self).__init__(None, None, growth, timeout)
         self.sensitivity = 1.0
         self.last_event_value = None
         self.last_event_time = 0
@@ -208,11 +259,6 @@ class TempoEncoder(EncoderElement):
             self.transport.song().nudge_down = False
 
     def handle_encoder_turn(self, value):
-        global shift_is_pressed
-        if shift_is_pressed:
-            self.alternate_encoder.handle_encoder_turn(value)
-            return
-
         now = time.time()
 
         # nudge if button pressed, otherwise adjust tempo
@@ -238,24 +284,16 @@ class TempoEncoder(EncoderElement):
         self.last_event_time = now
         self.last_event_value = value
 
-class SceneSelector(EncoderElement):
-    def __init__(self, cc, button_cc, song):
-        self.encoder = encoder(cc)
-        self.alternate_encoder = DynamicEncoder(None, song.master_track.mixer_device.volume)
-        self.button = button(button_cc)
-        self.encoder.add_value_listener(self.handle_encoder_turn)
-        self.button.add_value_listener(self.handle_button)
+
+class SceneSelector(DynamicEncoder):
+    def __init__(self, song):
+        super(SceneSelector, self).__init__(None, None)
         self.song = song
 
     def handle_button(self, value):
         self.song.view.selected_scene.fire()
 
     def handle_encoder_turn(self, value):
-        global shift_is_pressed
-        if shift_is_pressed:
-            self.alternate_encoder.handle_encoder_turn(value)
-            return
-
         scene_index = list(self.song.scenes).index(self.song.view.selected_scene)
         if value < 64:
             scene_index += 1
@@ -519,12 +557,10 @@ class XoneK2_DJ(ControlSurface):
 
         with self.component_guard():
             self._set_suppress_rebuild_requests(True)
+            self.shift_button = MultiShiftButton(BUTTON_LL, 2)
+
             self.init_session()
             self.init_mixer()
-            self.init_tempo()
-
-            self.shift_button = button(BUTTON_LL)
-            self.shift_button.add_value_listener(self.press_shift)
 
             self.remove_clip_listeners()
             self.add_clip_listeners()
@@ -532,13 +568,22 @@ class XoneK2_DJ(ControlSurface):
 
             self._set_suppress_rebuild_requests(False)
 
-    def press_shift(self, value):
-        global shift_is_pressed
-        self.shift_button.send_value(value)
-        shift_is_pressed = value > 0
-
     def init_session(self):
-        self.scene_selector = SceneSelector(ENCODER_LR, PUSH_ENCODER_LR, self.song())
+        self.bottom_right_encoder = MultiplexedEncoder(
+            [
+                SceneSelector(self.song()),
+                DynamicEncoder(None, self.song().master_track.mixer_device.volume)
+            ],
+            self.shift_button, ENCODER_LR, PUSH_ENCODER_LR)
+
+        self.transport = TransportComponent()
+        self.bottom_left_encoder = MultiplexedEncoder(
+            [
+                TempoEncoder(self.transport),
+                DynamicEncoder(None, self.song().master_track.mixer_device.cue_volume)
+            ],
+            self.shift_button, ENCODER_LL, PUSH_ENCODER_LL)
+
         self.global_stop_button = GlobalStopButton(BUTTON_LR, self.song())
 
     def init_mixer(self):
@@ -581,10 +626,6 @@ class XoneK2_DJ(ControlSurface):
         self.remove_clip_listeners()
         self.add_clip_listeners()
         self.update_track_playing_status()
-
-    def init_tempo(self):
-        self.transport = TransportComponent()
-        self.tempo = TempoEncoder(ENCODER_LL, PUSH_ENCODER_LL, self.transport)
 
     def on_slot_clip_changed(self, slot, track_idx, slot_idx):
         self.remove_clip_listeners()
