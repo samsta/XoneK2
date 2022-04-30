@@ -510,7 +510,7 @@ class XoneK2_DJ(ControlSurface):
     def __init__(self, instance):
         global g_logger
         g_logger = self.log_message
-        super(XoneK2_DJ, self).__init__(instance, False)
+        super(XoneK2_DJ, self).__init__(instance)
         self.tracks_with_listener = []
         self.slots_with_listener = []
         self.clips_with_listener = []
