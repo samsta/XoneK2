@@ -120,6 +120,22 @@ class MultiShiftButton(ButtonElement):
         elif self._state == 3:
             self.send_midi((144 + CHANNEL, self._notenr + self._colormap.GREEN, 127))
 
+class DetailViewButton(ButtonElement):
+    def __init__(self, notenr, parent, tracknum):
+        super(DetailViewButton, self).__init__(True, MIDI_NOTE_TYPE, CHANNEL, notenr)
+        self._notenr = notenr
+        self._parent = parent
+        self._tracknum = tracknum
+        self.add_value_listener(self._on_push)
+
+    def _on_push(self, value):
+        if value > 0:
+            track = self._parent.song().visible_tracks[self._tracknum]
+            if track.playing_slot_index >= 0:
+                self._parent.song().view.detail_clip = track.clip_slots[track.playing_slot_index].clip
+                # shouldn't have to do this, but for some reason the 'scene changed' event is not sent even though this changes the selected scene
+                self._parent.on_scene_changed()
+            self._parent.application().view.show_view('Detail/Clip')
 
 def button(notenr, name=None):
     rv = ButtonWithLight(notenr)
@@ -360,15 +376,25 @@ class MixerWithDevices(MixerComponent):
             for i, b in enumerate(device_select):
                 b.add_value_listener(partial(self.on_device_select_push, i))
 
+        self.song().view.add_selected_track_listener(self.on_track_selected)
+
+    def on_track_selected(self):
+        for i in range(len(self.song().visible_tracks)):
+            if i > NUM_TRACKS:
+                return
+            
+            if self.song().view.selected_track == self.song().visible_tracks[i]:
+                self.active_track = i
+                self.light_up(self.active_track)
+                self.attach_encoders()
+
     def on_device_select_push(self, track, value):
         if value > 1:
             self.select_track(track)
 
     def select_track(self, track):
-        self.active_track = track
-        self.light_up(self.active_track)
-        self.attach_encoders()
         self.song().view.selected_track = self.song().visible_tracks[track]
+        self.application().view.show_view('Detail/DeviceChain')
 
     def light_up(self, which_track):
         if self.device_select:
@@ -599,6 +625,7 @@ class XoneK2_DJ(ControlSurface):
         volume_limit = 0.85 # 0dB
         self.clip_start_buttons = []
         self.track_stop_buttons = []
+        self.clip_view_buttons = []
         for i in range(NUM_TRACKS):
             self.mixer.channel_strip(i).set_volume_control(Fader(FADERS[i], volume_limit))
             self.mixer.channel_strip(i).set_solo_button(button(GRID[2][i]))
@@ -613,6 +640,7 @@ class XoneK2_DJ(ControlSurface):
             self.clip_start_buttons.append(ClipStartButton(i, GRID[0][i], self.song()))
             self.track_stop_buttons.append(TrackStopButton(i, GRID[1][i], self.mixer))
             self.mixer.channel_strip(i)._track.add_clip_slots_listener(self.on_track_changed)
+            self.clip_view_buttons.append(DetailViewButton(GRID[3][i], self, i))
 
         self.song().view.add_selected_scene_listener(self.on_scene_changed)
         self.mixer.update()
