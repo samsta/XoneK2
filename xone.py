@@ -356,12 +356,8 @@ class GlobalStopButton(ButtonElement):
         self.button.add_value_listener(self.handle_button)
         self.song = song
         song.add_is_playing_listener(self.handle_song_is_playing)
-        song.add_metronome_listener(self.handle_metronome)
         self.last_stop_button_time = 0
         log("song %s" % dir(song))
-
-    def handle_metronome(self):
-        log("metro")
 
     def handle_song_is_playing(self):
         self.button.send_value(127 if self.song.is_playing else 0)
