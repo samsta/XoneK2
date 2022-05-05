@@ -1,5 +1,6 @@
 import time
-import inspect
+import os
+
 from functools import partial
 
 import Live
@@ -14,8 +15,6 @@ from _Framework.MixerComponent import MixerComponent
 from _Framework.SessionComponent import SessionComponent
 from _Framework.SliderElement import SliderElement
 from _Framework.TransportComponent import TransportComponent
-
-
 g_logger = None
 DEBUG = True
 
@@ -129,13 +128,14 @@ class DetailViewButton(ButtonElement):
         self.add_value_listener(self._on_push)
 
     def _on_push(self, value):
-        if value > 0:
+        if value > 64:
             track = self._parent.song().visible_tracks[self._tracknum]
             if track.playing_slot_index >= 0:
                 self._parent.song().view.detail_clip = track.clip_slots[track.playing_slot_index].clip
                 # shouldn't have to do this, but for some reason the 'scene changed' event is not sent even though this changes the selected scene
                 self._parent.on_scene_changed()
             self._parent.application().view.show_view('Detail/Clip')
+
 
 def button(notenr, name=None):
     rv = ButtonWithLight(notenr)
@@ -246,7 +246,6 @@ class MultiplexedEncoder(EncoderElement):
                 enc.handle_button(value)
 
 
-
 class TempoEncoder(DynamicEncoder):
     def __init__(self, transport, growth=1.15, timeout=0.2, max_sensitivity=100):
         """
@@ -307,7 +306,8 @@ class SceneSelector(DynamicEncoder):
         self.song = song
 
     def handle_button(self, value):
-        self.song.view.selected_scene.fire()
+        if (value > 64):
+            self.song.view.selected_scene.fire()
 
     def handle_encoder_turn(self, value):
         scene_index = list(self.song.scenes).index(self.song.view.selected_scene)
@@ -318,7 +318,38 @@ class SceneSelector(DynamicEncoder):
 
         if scene_index in range(len(self.song.scenes)):
             self.song.view.selected_scene = self.song.scenes[scene_index]
-        
+
+
+class BrowserScroller(DynamicEncoder):
+    HORIZONTAL = 0
+    VERTICAL = 1
+
+    def __init__(self, application, direction):
+        super(BrowserScroller, self).__init__(None, None)
+        self._application = application
+        self._direction = direction
+
+    def handle_button(self, value):
+        self._application.view.focus_view('Browser')
+        if (value > 64):
+            if self._direction == self.VERTICAL:
+                # yuck yuck yuck: hitting return when a clip is selected in browser loads it into the selected slot
+                os.system("osascript -e 'tell application \"System Events\" to tell process \"Live\" to keystroke return'")
+            else:
+                # hitting the right arrow when a clip is selected previews it. The same can be achieved with another encoder turn
+                self._application.view.scroll_view(Live.Application.Application.View.NavDirection.right, 'Browser', False)
+
+    def handle_encoder_turn(self, value):
+        self._application.view.focus_view('Browser')
+        nav = Live.Application.Application.View.NavDirection
+        if value < 64:
+            nav = nav.down if self._direction == self.VERTICAL else nav.right
+        else:
+            nav = nav.up if self._direction == self.VERTICAL else nav.left
+
+        self._application.view.scroll_view(nav, 'Browser', False)
+
+
 class GlobalStopButton(ButtonElement):
     def __init__(self, button_cc, song):
         self.button = button(button_cc)
@@ -583,7 +614,7 @@ class XoneK2_DJ(ControlSurface):
 
         with self.component_guard():
             self._set_suppress_rebuild_requests(True)
-            self.shift_button = MultiShiftButton(BUTTON_LL, 2)
+            self.shift_button = MultiShiftButton(BUTTON_LL, 3)
 
             self.init_session()
             self.init_mixer()
@@ -595,20 +626,22 @@ class XoneK2_DJ(ControlSurface):
             self._set_suppress_rebuild_requests(False)
 
     def init_session(self):
-        self.bottom_right_encoder = MultiplexedEncoder(
-            [
-                SceneSelector(self.song()),
-                DynamicEncoder(None, self.song().master_track.mixer_device.volume)
-            ],
-            self.shift_button, ENCODER_LR, PUSH_ENCODER_LR)
-
         self.transport = TransportComponent()
         self.bottom_left_encoder = MultiplexedEncoder(
             [
                 TempoEncoder(self.transport),
-                DynamicEncoder(None, self.song().master_track.mixer_device.cue_volume)
+                DynamicEncoder(None, self.song().master_track.mixer_device.cue_volume),
+                BrowserScroller(self.application(), BrowserScroller.HORIZONTAL)
             ],
             self.shift_button, ENCODER_LL, PUSH_ENCODER_LL)
+
+        self.bottom_right_encoder = MultiplexedEncoder(
+            [
+                SceneSelector(self.song()),
+                DynamicEncoder(None, self.song().master_track.mixer_device.volume),
+                BrowserScroller(self.application(), BrowserScroller.VERTICAL)
+            ],
+            self.shift_button, ENCODER_LR, PUSH_ENCODER_LR)
 
         self.global_stop_button = GlobalStopButton(BUTTON_LR, self.song())
 
