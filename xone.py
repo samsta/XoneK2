@@ -176,11 +176,16 @@ class Fader(SliderElement):
     def __init__(self, notenr, max=1.0):
         super(Fader,self).__init__(MIDI_CC_TYPE, CHANNEL, notenr)
         self.add_value_listener(self.handle_slider)
-        self.max = max
+        self._max = max
+        self._mapped_param = None
 
     def handle_slider(self, value):
-        if self.mapped_parameter() != None and self.mapped_parameter().value > self.max:
-            self.mapped_parameter().value = self.max
+        if (self.mapped_parameter() != None):
+            self._mapped_param = self.mapped_parameter()
+            self.release_parameter()
+
+        if self._mapped_param != None:
+            self._mapped_param.value = value * self._max / 127
 
 def knob(cc):
     return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
