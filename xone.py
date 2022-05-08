@@ -76,8 +76,9 @@ class ColorBottomRow():
 
 class ClipState():
     STOPPED = 0
-    TRIGGERED = 1
-    PLAYING = 2
+    STOPPED_NO_WARP = 1
+    TRIGGERED = 2
+    PLAYING = 3
 
 
 class ButtonWithLight(ButtonElement):
@@ -557,27 +558,42 @@ class MixerWithDevices(MixerComponent):
 class ClipStartButton(ButtonElement):
     def __init__(self, tracknr, notenr, song):
         super(ClipStartButton, self).__init__(True, MIDI_NOTE_TYPE, CHANNEL, notenr)
-        self.song = song
-        self.tracknr = tracknr
-        self.notenr = notenr
-        self.add_value_listener(self.push_button)
+        self._song = song
+        self._tracknr = tracknr
+        self._notenr = notenr
+        self.add_value_listener(self._push_button)
+        self._timer = None
+        self._warning_toggle = False
 
     def set_clip_selected(self, is_selected, state):
+        if self._timer:
+            self._timer.stop()
+
         if is_selected:
             if state == ClipState.PLAYING:
                 color = Color.RED
             elif state == ClipState.TRIGGERED:
                 color = Color.YELLOW
+            elif state == ClipState.STOPPED_NO_WARP:
+                color = Color.GREEN
+                self._timer = Live.Base.Timer(callback=self._flash_warp_warning, interval=200, repeat=True)
+                self._timer.start()
             else:
                 color = Color.GREEN
 
-            self.send_midi((144 + CHANNEL, self.notenr + color, 127))    
+            self.send_midi((144 + CHANNEL, self._notenr + color, 127))    
         else:
-            self.send_midi((144 + CHANNEL, self.notenr, 0))    
+            self.send_midi((144 + CHANNEL, self._notenr, 0))    
 
-    def push_button(self, value):
+    def _flash_warp_warning(self):
+        color = Color.GREEN if self._warning_toggle else Color.RED
+        self._warning_toggle = not self._warning_toggle
+        self.send_midi((144 + CHANNEL, self._notenr + color, 127))    
+
+    def _push_button(self, value):
         if value > 1:
-            self.song.view.selected_scene.clip_slots[self.tracknr].fire()
+            self._song.view.selected_scene.clip_slots[self._tracknr].fire()
+
 
 class TrackStopButton(ButtonElement):
     def __init__(self, tracknr, notenr, mixer):
@@ -668,7 +684,9 @@ class XoneK2_DJ(ControlSurface):
                 button(BUTTONS1[i])))
             self.clip_start_buttons.append(ClipStartButton(i, GRID[0][i], self.song()))
             self.track_stop_buttons.append(TrackStopButton(i, GRID[1][i], self.mixer))
-            self.mixer.channel_strip(i)._track.add_clip_slots_listener(self.on_track_changed)
+            if self.mixer.channel_strip(i)._track != None:
+                # TODO support adding of tracks without the need to reload the script
+                self.mixer.channel_strip(i)._track.add_clip_slots_listener(self.on_track_changed)
             self.clip_view_buttons.append(DetailViewButton(GRID[3][i], self, i))
 
         self.song().view.add_selected_scene_listener(self.on_scene_changed)
@@ -707,6 +725,9 @@ class XoneK2_DJ(ControlSurface):
                 state = ClipState.PLAYING
             elif slot.clip.is_triggered:
                 state = ClipState.TRIGGERED
+            elif slot.clip.is_audio_clip and not slot.clip.warping:
+                # special state so we can emit warning when warping is not on
+                state = ClipState.STOPPED_NO_WARP
         return slot.has_clip, state
 
 
