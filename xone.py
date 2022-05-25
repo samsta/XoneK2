@@ -355,6 +355,26 @@ class BrowserScroller(DynamicEncoder):
 
         self._application.view.scroll_view(nav, 'Browser', False)
 
+class WaveformZoom(DynamicEncoder):
+    def __init__(self, application, song):
+        super(WaveformZoom, self).__init__(None, None)
+        self._application = application
+        self._song = song
+
+    def handle_button(self, value):
+        if (value > 64):
+            self._song.view.follow_song = True
+
+    def handle_encoder_turn(self, value):
+        self._application.view.show_view('Detail/Clip')
+        self._application.view.focus_view('Detail/Clip')
+        if value < 64:
+            # zoom in yuckily
+            os.system("osascript -e 'tell application \"System Events\" to tell process \"Live\" to key code 24'")
+        else:
+            # zoom out yuckily
+            os.system("osascript -e 'tell application \"System Events\" to tell process \"Live\" to key code 27'")
+
 
 class GlobalStopButton(ButtonElement):
     def __init__(self, button_cc, song):
@@ -631,7 +651,7 @@ class XoneK2_DJ(ControlSurface):
 
         with self.component_guard():
             self._set_suppress_rebuild_requests(True)
-            self.shift_button = MultiShiftButton(BUTTON_LL, 3)
+            self.shift_button = MultiShiftButton(BUTTON_LL, 4)
 
             self.init_session()
             self.init_mixer()
@@ -648,7 +668,8 @@ class XoneK2_DJ(ControlSurface):
             [
                 TempoEncoder(self.transport),
                 DynamicEncoder(None, self.song().master_track.mixer_device.cue_volume),
-                BrowserScroller(self.application(), BrowserScroller.HORIZONTAL)
+                BrowserScroller(self.application(), BrowserScroller.HORIZONTAL),
+                WaveformZoom(self.application(), self.song())
             ],
             self.shift_button, ENCODER_LL, PUSH_ENCODER_LL)
 
