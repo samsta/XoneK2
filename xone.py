@@ -15,6 +15,8 @@ from _Framework.MixerComponent import MixerComponent
 from _Framework.SessionComponent import SessionComponent
 from _Framework.SliderElement import SliderElement
 from _Framework.TransportComponent import TransportComponent
+
+from XoneK2_DJ.Browser import BrowserItem, BrowserRepresentation
 g_logger = None
 DEBUG = True
 
@@ -326,34 +328,30 @@ class SceneSelector(DynamicEncoder):
             self.song.view.selected_scene = self.song.scenes[scene_index]
 
 
+
+
+
 class BrowserScroller(DynamicEncoder):
     HORIZONTAL = 0
     VERTICAL = 1
 
-    def __init__(self, application, direction):
+    def __init__(self, browser, direction):
         super(BrowserScroller, self).__init__(None, None)
-        self._application = application
+        self._browser = browser
         self._direction = direction
 
     def handle_button(self, value):
-        self._application.view.focus_view('Browser')
-        if (value > 64):
-            if self._direction == self.VERTICAL:
-                # yuck yuck yuck: hitting return when a clip is selected in browser loads it into the selected slot
-                os.system("osascript -e 'tell application \"System Events\" to tell process \"Live\" to keystroke return'")
-            else:
-                # hitting the right arrow when a clip is selected previews it. The same can be achieved with another encoder turn
-                self._application.view.scroll_view(Live.Application.Application.View.NavDirection.right, 'Browser', False)
+        if self._direction == self.HORIZONTAL:
+            self._browser.preview()
+        else:
+            self._browser.load()
 
     def handle_encoder_turn(self, value):
-        self._application.view.focus_view('Browser')
-        nav = Live.Application.Application.View.NavDirection
-        if value < 64:
-            nav = nav.down if self._direction == self.VERTICAL else nav.right
+        if self._direction == self.VERTICAL:
+            self._browser.scroll_vertical(value < 64)
         else:
-            nav = nav.up if self._direction == self.VERTICAL else nav.left
+            self._browser.scroll_horizontal(value >= 64)
 
-        self._application.view.scroll_view(nav, 'Browser', False)
 
 class WaveformZoom(DynamicEncoder):
     def __init__(self, application, song):
@@ -664,11 +662,12 @@ class XoneK2_DJ(ControlSurface):
 
     def init_session(self):
         self.transport = TransportComponent()
+        self.browser_repr = BrowserRepresentation(self.application().browser)
         self.bottom_left_encoder = MultiplexedEncoder(
             [
                 TempoEncoder(self.transport),
                 DynamicEncoder(None, self.song().master_track.mixer_device.cue_volume),
-                BrowserScroller(self.application(), BrowserScroller.HORIZONTAL),
+                BrowserScroller(self.browser_repr, BrowserScroller.HORIZONTAL),
                 WaveformZoom(self.application(), self.song())
             ],
             self.shift_button, ENCODER_LL, PUSH_ENCODER_LL)
@@ -677,7 +676,7 @@ class XoneK2_DJ(ControlSurface):
             [
                 SceneSelector(self.song()),
                 DynamicEncoder(None, self.song().master_track.mixer_device.volume),
-                BrowserScroller(self.application(), BrowserScroller.VERTICAL)
+                BrowserScroller(self.browser_repr, BrowserScroller.VERTICAL)
             ],
             self.shift_button, ENCODER_LR, PUSH_ENCODER_LR)
 

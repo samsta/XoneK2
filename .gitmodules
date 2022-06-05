@@ -1,0 +1,9 @@
+[submodule "src/json11"]
+	path = src/json11
+	url = https://github.com/dropbox/json11.git
+[submodule "tinytag"]
+	path = tinytag
+	url = https://github.com/samsta/tinytag.git
+[submodule "src/imgui"]
+	path = src/imgui
+	url = https://github.com/ocornut/imgui.git

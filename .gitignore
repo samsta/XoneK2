@@ -1,3 +1,6 @@
 *.swp
 .livedir
 __pycache__/
+.DS_Store
+build/
+.vscode/
