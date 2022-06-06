@@ -21,6 +21,7 @@ add_definitions(
     )
 
 add_executable(LiveMusicBrowser 
+    ${CMAKE_SOURCE_DIR}/main.cpp
     ${CMAKE_SOURCE_DIR}/LiveMusicBrowser.cpp
     ${CMAKE_SOURCE_DIR}/imgui/imgui.cpp
     ${CMAKE_SOURCE_DIR}/imgui/imgui_demo.cpp

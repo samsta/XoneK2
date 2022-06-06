@@ -3,30 +3,105 @@ import re
 import os
 import socket
 import json
+import pathlib
+import time
 from XoneK2_DJ.tinytag import TinyTag
 from urllib.parse import unquote
 
-class BrowserItem():
-    def __init__(self, live_browser_item):
-        self._item = live_browser_item
-        self._file_name = self._uri_to_path(self._item.uri)
+MUSIC_TO_OPEN_KEY = {
+    'Am':  '1m',
+    'C':   '1d',
+    'Em':  '2m',
+    'G':   '2d',
+    'Bm':  '3m',
+    'D':   '3d',
+    'F#m': '4m',
+    'Gbm': '4m',
+    'A':   '4d',
+    'Dbm': '5m',
+    'C#m': '5m',
+    'E':   '5d',
+    'Abm': '6m',
+    'G#m': '6m',
+    'B':   '6d',
+    'Ebm': '7m',
+    'D#m': '7m',
+    'F#':  '7d',
+    'Gb':  '7d',
+    'Bbm': '8m',
+    'A#m': '8m',
+    'Db':  '8d',
+    'C#':  '8d',
+    'Fm':  '9m',
+    'Ab':  '9d',
+    'G#':  '9d',
+    'Cm':  '10m',
+    'Eb':  '10d',
+    'D#':  '10d',
+    'Gm':  '11m',
+    'Bb':  '11d',
+    'A#':  '11d',
+    'Dm':  '12m',
+    'F':   '12d'
+}
+
+OPEN_TO_MUSICAL_KEY = {
+     '1m':  'Am',
+     '1d':  'C',
+     '2m':  'Em',
+     '2d':  'G',
+     '3m':  'Bm',
+     '3d':  'D',
+     '4m':  'F#m',
+     '4d':  'A',
+     '5m':  'C#m',
+     '5d':  'E',
+     '6m':  'G#m',
+     '6d':  'B',
+     '7m':  'D#m',
+     '7d':  'F#',
+     '8m':  'A#m',
+     '8d':  'C#',
+     '9m':  'Fm',
+     '9d':  'G#',
+     '10m': 'Cm',
+     '10d': 'D#',
+     '11m': 'Gm',
+     '11d': 'A#',
+     '12m': 'Dm', 
+     '12d': 'F' 
+}
+
+def uri_to_path(uri):
+    path = re.sub('^query:UserLibrary#', '~/Music/Ableton/User Library/', uri)
+    path = re.sub(':','/', path)
+    path = unquote(path)
+    return path
+
+class TaggedFile():
+    def __init__(self, filename):
+        self._file_name = filename
         self._tags = TinyTag.get(self._file_name)
         self._duration = "%d:%02d" % (int(self._tags.duration)/60, int(self._tags.duration) % 60)
         self._bpm = self._tags.extra['bpm'] if 'bpm' in self._tags.extra else "none"
         self._key = self._tags.extra['initial_key'] if 'initial_key' in self._tags.extra else "none"
+        self._normaliseKey()
 
-    def _uri_to_path(self, uri):
-        path = re.sub('^query:UserLibrary#', '~/Music/Ableton/User Library/', uri)
-        path = re.sub(':','/', path)
-        path = unquote(path)
-        return path
+    def _normaliseKey(self):
+        self._open_key = ""
+        self._musical_key = ""
+        if re.match("[0-9]{1,2}[dm]", self._key):
+            self._open_key = self._key
+            self._musical_key = OPEN_TO_MUSICAL_KEY[self._key] if self._key in OPEN_TO_MUSICAL_KEY.keys() else "?"
+        else:
+            key = re.sub('maj', '', self._key)
+            key = re.sub('min','m', key)
+            self._musical_key = key
+            self._open_key = MUSIC_TO_OPEN_KEY[key] if key in MUSIC_TO_OPEN_KEY.keys() else "?"
 
     @property
     def filename(self):
         return self._file_name
-
-    def item(self):
-        return self._item
 
     @property
     def artist(self):
@@ -42,7 +117,7 @@ class BrowserItem():
 
     @property
     def key(self):
-        return self._key
+        return self._open_key + " / " + self._musical_key
 
     @property
     def bpm(self):
@@ -52,6 +127,14 @@ class BrowserItem():
     def genre(self):
         return self._tags.genre or "undefined"
 
+
+class BrowserItem(TaggedFile):
+    def __init__(self, live_browser_item):
+        super(BrowserItem, self).__init__(uri_to_path(live_browser_item.uri))
+        self._item = live_browser_item
+
+    def item(self):
+        return self._item
 
 class BrowserRepresentation():
 
@@ -64,6 +147,7 @@ class BrowserRepresentation():
         self._current = []
         self._current_index = 0
         self._iterate_and_find_audio(browser.user_library)
+        self._playing_tracks = {}
 
         if os.path.exists(self.SOCKET_IN):
             os.remove(self.SOCKET_IN)
@@ -71,7 +155,7 @@ class BrowserRepresentation():
         self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         self._socket.bind(self.SOCKET_IN)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 250*1024)
-       # os.system("/Users/sam/Projects/GeoLEDic/build/GeoLEDic.app/Contents/MacOS/GeoLEDic&")
+        self.startUi()
         self._update()
 
     def _iterate_and_find_audio(self, node):
@@ -111,7 +195,8 @@ class BrowserRepresentation():
                 "BPM",
                 "Key"
             ],
-            "rows": []
+            "rows": [],
+            "playing": {}
         }
 
         for item in self._current:
@@ -120,7 +205,40 @@ class BrowserRepresentation():
                 r.append(getattr(item, k.lower()))
             d["rows"].append(r)
 
+        for track_ix in self._playing_tracks.keys():
+            d["playing"][track_ix] = []
+            for k in d["cols"]:
+                d["playing"][track_ix].append(getattr(self._playing_tracks[track_ix], k.lower()))
+
         try:
             self._socket.sendto(json.dumps(d, indent=1).encode('utf-8'), self.SOCKET_OUT)
         except:
             pass
+
+    def setPlayingTracks(self, playing_tracks):
+        p = {}
+        for i in playing_tracks.keys():
+            p[i] = TaggedFile(playing_tracks[i])
+        self._playing_tracks = p
+        self._update()
+
+    def startUi(self):
+        pwd = pathlib.Path(__file__).parent.resolve()
+        os.system("'%s/build/LiveMusicBrowser' &" % pwd)
+        timeout = 10
+        while (timeout > 0 and not os.path.exists(self.SOCKET_OUT)):
+            time.sleep(0.1)
+            timeout = timeout - 1
+    
+
+    def quitUi(self):
+        try:
+            self._socket.sendto(json.dumps({"quit": True}).encode('utf-8'), self.SOCKET_OUT)
+        except:
+            pass
+
+    def __del__(self):
+        self.quitUi()
+
+    def disconnect(self):
+        self.quitUi()
