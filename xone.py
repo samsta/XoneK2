@@ -329,9 +329,6 @@ class SceneSelector(DynamicEncoder):
             self.song.view.selected_scene = self.song.scenes[scene_index]
 
 
-
-
-
 class BrowserScroller(DynamicEncoder):
     HORIZONTAL = 0
     VERTICAL = 1
@@ -374,6 +371,17 @@ class WaveformZoom(DynamicEncoder):
             # zoom out yuckily
             os.system("osascript -e 'tell application \"System Events\" to tell process \"Live\" to key code 27'")
 
+class PositionScroller(DynamicEncoder):
+    def __init__(self, application, song):
+        super(PositionScroller, self).__init__(None, None)
+        self._application = application
+        self._song = song
+
+    def handle_encoder_turn(self, value):
+        if value < 64:
+            self._song.view.detail_clip.position = self._song.view.detail_clip.position + 32
+        else:
+            self._song.view.detail_clip.position = self._song.view.detail_clip.position - 32
 
 class GlobalStopButton(ButtonElement):
     def __init__(self, button_cc, song):
@@ -684,7 +692,8 @@ class XoneK2_DJ(ControlSurface):
             [
                 SceneSelector(self.song()),
                 DynamicEncoder(None, self.song().master_track.mixer_device.volume),
-                BrowserScroller(self.browser_repr, BrowserScroller.VERTICAL)
+                BrowserScroller(self.browser_repr, BrowserScroller.VERTICAL),
+                PositionScroller(self.application(), self.song())
             ],
             self.shift_button, ENCODER_LR, PUSH_ENCODER_LR)
 
