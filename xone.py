@@ -15,6 +15,7 @@ from _Framework.MixerComponent import MixerComponent
 from _Framework.SessionComponent import SessionComponent
 from _Framework.SliderElement import SliderElement
 from _Framework.TransportComponent import TransportComponent
+import _Framework.Task
 
 from XoneK2_DJ.Browser import BrowserItem, BrowserRepresentation
 g_logger = None
@@ -660,9 +661,16 @@ class XoneK2_DJ(ControlSurface):
 
             self._set_suppress_rebuild_requests(False)
 
+    def _tempo_changed(self):
+        self.browser_repr.tempo(self.song().tempo)
+
     def init_session(self):
         self.transport = TransportComponent()
-        self.browser_repr = BrowserRepresentation(self.application().browser)
+        self.browser_repr = BrowserRepresentation(self.application().browser, self.log_message)
+        self.song().add_tempo_listener(self._tempo_changed)
+        self._tempo_changed()
+        self._browser_poll_task = self._tasks.add(Task.repeat(Task.run(self.browser_repr.poll)))
+
         self.bottom_left_encoder = MultiplexedEncoder(
             [
                 TempoEncoder(self.transport),

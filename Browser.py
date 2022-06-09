@@ -5,6 +5,7 @@ import socket
 import json
 import pathlib
 import time
+import select
 from XoneK2_DJ.tinytag import TinyTag
 from urllib.parse import unquote
 
@@ -141,10 +142,12 @@ class BrowserRepresentation():
     SOCKET_IN = "/tmp/LiveMusicBrowser.src.socket"
     SOCKET_OUT = "/tmp/LiveMusicBrowser.ui.socket"
 
-    def __init__(self, browser):
+    def __init__(self, browser, log):
         self._browser = browser
+        self._log = log
         self._parents = []
         self._current = []
+        self._filtered = []
         self._current_index = 0
         self._iterate_and_find_audio(browser.user_library)
         self._playing_tracks = {}
@@ -155,7 +158,13 @@ class BrowserRepresentation():
         self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         self._socket.bind(self.SOCKET_IN)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 250*1024)
+        self._bpm_lower = 0.0
+        self._bpm_upper = 1000.0
+        self._bpm = 100.0
+        self._bpm_tolerance_percent = 5.0
+        self._filter_by_bpm = True
         self.startUi()
+        self._apply_filter()
         self._update()
 
     def _iterate_and_find_audio(self, node):
@@ -169,7 +178,7 @@ class BrowserRepresentation():
         pass
 
     def scroll_vertical(self, down_not_up):
-        if down_not_up and self._current_index < len(self._current) - 1:
+        if down_not_up and self._current_index < len(self._filtered) - 1:
             self._current_index = self._current_index + 1
         elif not down_not_up and self._current_index > 0:
             self._current_index = self._current_index - 1
@@ -177,14 +186,39 @@ class BrowserRepresentation():
 
     def preview(self):
         self._browser.preview_item(
-            self._current[self._current_index].item())
+            self._filtered[self._current_index].item())
 
     def load(self):
         self._browser.load_item(
-            self._current[self._current_index].item())
+            self._filtered[self._current_index].item())
+
+    def tempo(self, bpm):
+        self._bpm = float(bpm)
+        fac = (100.0 + self._bpm_tolerance_percent)/100.0
+        self._bpm_upper = self._bpm * fac
+        self._bpm_lower = self._bpm / fac
+        self._apply_filter()
+        self._update()
+
+    def _filter(self, item):
+        if not self._filter_by_bpm:
+            return True
+        return float(item.bpm) > self._bpm_lower and float(item.bpm) < self._bpm_upper
+
+    def _apply_filter(self):
+        try:
+            current_sel = self._filtered[self._current_index]
+        except:
+            current_sel = None
+
+        self._filtered = list(filter(lambda item: self._filter(item), self._current))
+
+        try:
+            self._current_index = self._filtered.index(current_sel)
+        except:
+            self._current_index = 0
 
     def _update(self):
-        
         d = {
             "sel_ix": self._current_index,
             "cols": [
@@ -196,10 +230,11 @@ class BrowserRepresentation():
                 "Key"
             ],
             "rows": [],
-            "playing": {}
+            "playing": {},
+            "bpm_filter": self._filter_by_bpm
         }
 
-        for item in self._current:
+        for item in self._filtered:
             r = []
             for k in d["cols"]:
                 r.append(getattr(item, k.lower()))
@@ -220,6 +255,7 @@ class BrowserRepresentation():
         for i in playing_tracks.keys():
             p[i] = TaggedFile(playing_tracks[i])
         self._playing_tracks = p
+        self._apply_filter()
         self._update()
 
     def startUi(self):
@@ -230,6 +266,17 @@ class BrowserRepresentation():
             time.sleep(0.1)
             timeout = timeout - 1
     
+    def poll(self):
+        ready = select.select([self._socket], [], [], 0)
+        if ready[0]:
+            data = self._socket.recv(4096)
+            self._log("Received: %s" % data)
+            data = json.loads(data)
+            if "bpm_filter" in data:
+                self._filter_by_bpm = data["bpm_filter"]
+                self._apply_filter()
+                self._update()
+
 
     def quitUi(self):
         try:

@@ -1,6 +1,18 @@
 #include "imgui/imgui.h"
 #include "json11/json11.hpp"
 
+static bool filter_bpm = false;
+
+void drawFilters(const json11::Json& data, json11::Json& send_data)
+{
+    filter_bpm = data["bpm_filter"].bool_value();
+    ImGui::Checkbox("Filter BPM", &filter_bpm);
+    if (filter_bpm != data["bpm_filter"].bool_value())
+    {
+        send_data = json11::Json::object{{"bpm_filter", json11::Json(filter_bpm)}};
+    }
+}
+
 void drawPlayingTracks(const json11::Json& data)
 {
     ImGui::Text("Now Playing:");
@@ -66,7 +78,7 @@ void drawBrowserList(const json11::Json& data)
 }
 
 
-void drawFrame(int display_w, int display_h, const json11::Json& data)
+void drawFrame(int display_w, int display_h, const json11::Json& data, json11::Json& send_data)
 {
     ImGuiWindowFlags window_flags = 
             ImGuiWindowFlags_NoDecoration | 
@@ -89,6 +101,8 @@ void drawFrame(int display_w, int display_h, const json11::Json& data)
     ImGui::Begin("Browse", nullptr, window_flags);                         
 
     drawPlayingTracks(data);
+    ImGui::Separator();
+    drawFilters(data, send_data);
     ImGui::Separator();
     drawBrowserList(data);
 

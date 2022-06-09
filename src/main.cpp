@@ -25,6 +25,7 @@ static void glfw_error_callback(int error, const char* description)
 }
 
 const char* SOCKET_IN = "/tmp/LiveMusicBrowser.ui.socket";
+const char* SOCKET_OUT = "/tmp/LiveMusicBrowser.src.socket";
 
 int guard(int n, const char* err) 
 { 
@@ -56,7 +57,19 @@ bool readInput(int socket, json11::Json& data)
     return data["quit"].is_null();
 }
 
-extern void drawFrame(int display_w, int display_h, const json11::Json& data);
+void writeOutput(int socket, const json11::Json& data)
+{
+    std::string str = data.dump();
+    struct sockaddr_un name;
+    name.sun_family = AF_UNIX;
+    strcpy(name.sun_path, SOCKET_OUT);
+    if (sendto(socket, str.data(), str.size(), 0,
+              reinterpret_cast<struct sockaddr*>(&name), sizeof(struct sockaddr_un)) < 0) {
+        perror("sendto()");
+    }
+}
+
+extern void drawFrame(int display_w, int display_h, const json11::Json& data, json11::Json& send_data);
 
 int main(int, char**)
 {
@@ -126,7 +139,8 @@ int main(int, char**)
         glfwGetFramebufferSize(window, &display_w, &display_h);
 
         ImGui::NewFrame();
-        drawFrame(display_w, display_h, data);
+        json11::Json send_data;
+        drawFrame(display_w, display_h, data, send_data);
 
         if (show_demo_window)
             ImGui::ShowDemoWindow(&show_demo_window);
@@ -139,6 +153,11 @@ int main(int, char**)
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+
+        if (not send_data.is_null())
+        {
+            writeOutput(sock, send_data);
+        }
     }
 
     // Cleanup
