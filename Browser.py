@@ -79,6 +79,44 @@ def uri_to_path(uri):
     path = unquote(path)
     return path
 
+def key_distance(from_key, to_key):
+    # key distances are as follows:
+    # -1: unknown
+    #  0: same key
+    #  1: neighbouring key on circle
+    #  2: opposite key on circle
+    #  3: same number, but change d <-> m
+    if from_key == to_key:
+        return 0
+
+    try:
+        from_dm = from_key[-1]
+        to_dm = to_key[-1]
+        from_num = int(from_key[0:-1])
+        to_num = int(to_key[0:-1])
+    except:
+        return -1
+
+    if from_dm != to_dm:
+        # only accept same number if changing from major to mayor and vice versa
+        if from_num == to_num:
+            return 3
+        else:
+            return 12
+
+    d = (12 + from_num - to_num) % 12
+
+    if (d == 6):
+        #exactly opposite on wheel
+        return 2
+
+    if (d > 6):
+        d = 12 - 6
+
+    if (d <= 1):
+        return d
+    return 12
+
 class TaggedFile():
     def __init__(self, filename):
         self._file_name = filename
@@ -86,6 +124,7 @@ class TaggedFile():
         self._duration = "%d:%02d" % (int(self._tags.duration)/60, int(self._tags.duration) % 60)
         self._bpm = self._tags.extra['bpm'] if 'bpm' in self._tags.extra else "none"
         self._key = self._tags.extra['initial_key'] if 'initial_key' in self._tags.extra else "none"
+        self._key_distance = -1
         self._normaliseKey()
 
     def _normaliseKey(self):
@@ -100,21 +139,31 @@ class TaggedFile():
             self._musical_key = key
             self._open_key = MUSIC_TO_OPEN_KEY[key] if key in MUSIC_TO_OPEN_KEY.keys() else "?"
 
+    def updateDistanceTo(self, key):
+        if key == None:
+            self._key_distance = -1
+        else:
+            self._key_distance = key_distance(self.open_key, key)
+
     @property
     def filename(self):
         return self._file_name
 
     @property
     def artist(self):
-        return self._tags.artist
+        return self._tags.artist or "unknown"
 
     @property
     def title(self):
-        return self._tags.title
+        return self._tags.title or self.filename.split('/')[-1]
 
     @property
     def duration(self):
         return self._duration
+
+    @property
+    def open_key(self):
+        return self._open_key
 
     @property
     def key(self):
@@ -122,11 +171,15 @@ class TaggedFile():
 
     @property
     def bpm(self):
-        return self._bpm
+        return float(self._bpm) if self._bpm != "none" else 0.0
 
     @property
     def genre(self):
-        return self._tags.genre or "undefined"
+        return self._tags.genre or "unknown"
+
+    @property
+    def keydistance(self):
+        return self._key_distance
 
 
 class BrowserItem(TaggedFile):
@@ -194,16 +247,14 @@ class BrowserRepresentation():
 
     def tempo(self, bpm):
         self._bpm = float(bpm)
-        fac = (100.0 + self._bpm_tolerance_percent)/100.0
-        self._bpm_upper = self._bpm * fac
-        self._bpm_lower = self._bpm / fac
         self._apply_filter()
         self._update()
 
     def _filter(self, item):
         if not self._filter_by_bpm:
             return True
-        return float(item.bpm) > self._bpm_lower and float(item.bpm) < self._bpm_upper
+
+        return item.bpm > self._bpm_lower and item.bpm < self._bpm_upper
 
     def _apply_filter(self):
         try:
@@ -211,12 +262,25 @@ class BrowserRepresentation():
         except:
             current_sel = None
 
+        fac = (100.0 + self._bpm_tolerance_percent)/100.0
+        self._bpm_upper = self._bpm * fac
+        self._bpm_lower = self._bpm / fac
+
         self._filtered = list(filter(lambda item: self._filter(item), self._current))
 
         try:
             self._current_index = self._filtered.index(current_sel)
         except:
             self._current_index = 0
+
+    def _update_key_distance(self):
+        self._playing_key = None
+        for i in self._playing_tracks.keys():
+            self._playing_key = self._playing_tracks[i].open_key
+            break 
+
+        for item in self._current:
+            item.updateDistanceTo(self._playing_key)
 
     def _update(self):
         d = {
@@ -227,11 +291,13 @@ class BrowserRepresentation():
                 "Genre",
                 "Duration",
                 "BPM",
-                "Key"
+                "Key",
+                "KeyDistance"
             ],
             "rows": [],
             "playing": {},
-            "bpm_filter": self._filter_by_bpm
+            "bpm_filter": self._filter_by_bpm,
+            "bpm_percent": self._bpm_tolerance_percent
         }
 
         for item in self._filtered:
@@ -255,6 +321,7 @@ class BrowserRepresentation():
         for i in playing_tracks.keys():
             p[i] = TaggedFile(playing_tracks[i])
         self._playing_tracks = p
+        self._update_key_distance()
         self._apply_filter()
         self._update()
 
@@ -274,6 +341,10 @@ class BrowserRepresentation():
             data = json.loads(data)
             if "bpm_filter" in data:
                 self._filter_by_bpm = data["bpm_filter"]
+                self._apply_filter()
+                self._update()
+            elif "bpm_percent" in data:
+                self._bpm_tolerance_percent = data["bpm_percent"]
                 self._apply_filter()
                 self._update()
 

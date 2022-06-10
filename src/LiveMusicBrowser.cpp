@@ -2,6 +2,7 @@
 #include "json11/json11.hpp"
 
 static bool filter_bpm = false;
+static float bpm_percentage = 5;
 
 void drawFilters(const json11::Json& data, json11::Json& send_data)
 {
@@ -10,6 +11,13 @@ void drawFilters(const json11::Json& data, json11::Json& send_data)
     if (filter_bpm != data["bpm_filter"].bool_value())
     {
         send_data = json11::Json::object{{"bpm_filter", json11::Json(filter_bpm)}};
+    }
+    bpm_percentage = data["bpm_percent"].number_value();
+    float percentage_step = 1.0;
+    ImGui::InputScalar("BPM range", ImGuiDataType_Float,  &bpm_percentage, &percentage_step, &percentage_step, "%3.1f%%");
+    if (bpm_percentage != float(data["bpm_percent"].number_value()))
+    {
+        send_data = json11::Json::object{{"bpm_percent", json11::Json(bpm_percentage)}};
     }
 }
 
@@ -35,7 +43,11 @@ void drawPlayingTracks(const json11::Json& data)
             for (int column = 1; column <= track.second.array_items().size(); column++)
             {
                 ImGui::TableSetColumnIndex(column);
-                ImGui::TextUnformatted(track.second[column-1].string_value().c_str());
+                if (track.second[column-1].is_number()) {
+                    ImGui::Text("%3.5g", track.second[column-1].number_value());
+                } else {
+                    ImGui::TextUnformatted(track.second[column-1].string_value().c_str());
+                }
             }
         }
         ImGui::EndTable();
@@ -68,7 +80,11 @@ void drawBrowserList(const json11::Json& data)
                 }
                 else
                 {
-                    ImGui::TextUnformatted(row[column].string_value().c_str());
+                    if (row[column].is_number()) {
+                        ImGui::Text("%3.5g", row[column].number_value());
+                    } else {
+                        ImGui::TextUnformatted(row[column].string_value().c_str());
+                    }
                 }
             }
         }
