@@ -217,7 +217,7 @@ class BrowserRepresentation():
         self._bpm_tolerance_percent = 5.0
         self._filter_by_bpm = True
         self._filter_by_key = True
-        self.startUi()
+        self._start_ui()
         self._apply_filter()
         self._update()
 
@@ -316,7 +316,7 @@ class BrowserRepresentation():
         except:
             pass
 
-    def setPlayingTracks(self, playing_tracks):
+    def set_playing_tracks(self, playing_tracks):
         p = {}
         for i in playing_tracks.keys():
             p[i] = TaggedFile(playing_tracks[i])
@@ -325,7 +325,7 @@ class BrowserRepresentation():
         self._apply_filter()
         self._update()
 
-    def startUi(self):
+    def _start_ui(self):
         pwd = pathlib.Path(__file__).parent.resolve()
         os.system("'%s/build/LiveMusicBrowser' &" % pwd)
         timeout = 10
@@ -355,14 +355,14 @@ class BrowserRepresentation():
                 self._update()
 
 
-    def quitUi(self):
+    def _quit_ui(self):
         try:
             self._socket.sendto(json.dumps({"quit": True}).encode('utf-8'), self.SOCKET_OUT)
         except:
             pass
 
     def __del__(self):
-        self.quitUi()
+        self._quit_ui()
 
     def disconnect(self):
-        self.quitUi()
+        self._quit_ui()

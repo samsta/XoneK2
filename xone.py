@@ -788,7 +788,7 @@ class XoneK2_DJ(ControlSurface):
             if playing_file != None:
                 playing_tracks[i] = playing_file
             i += 1
-        self.browser_repr.setPlayingTracks(playing_tracks)
+        self.browser_repr.set_playing_tracks(playing_tracks)
 
     def clip_add_callback(self, clip, track_idx, clip_idx):
         callback = lambda : self.on_clip_playing_changed(clip, track_idx, clip_idx)
