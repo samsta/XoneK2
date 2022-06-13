@@ -34,16 +34,17 @@ void drawFilters(const json11::Json& data, json11::Json& send_data)
     }
 }
 
-void drawPlayingTracks(const json11::Json& data)
+void drawPlayingDecks(const json11::Json& data)
 {
     ImGui::Text("Now Playing:");
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
 
-    if (not data["playing"].is_null() and ImGui::BeginTable("playing", data["cols"].array_items().size(), flags))
+    if (not data["decks"].is_null() and ImGui::BeginTable("decks", data["cols"].array_items().size(), flags))
     {
         ImGui::TableSetupColumn("Deck");
         int key_distance_col_ix = -1;
-        int col_ix = 1;
+        int col_ix = 0;
+        int num_columns = 0;
         for (const auto& col_name: data["cols"].array_items())
         {
             if (col_name.string_value() == "KeyDistance")
@@ -52,29 +53,37 @@ void drawPlayingTracks(const json11::Json& data)
                 continue;
             }
             ImGui::TableSetupColumn(col_name.string_value().c_str());
+            num_columns++;
             col_ix++;
         }
         ImGui::TableHeadersRow();
 
-        int display_column_offset = 0;
-        for (const auto& track: data["playing"].object_items())
+        num_columns++; // account for the 'deck' column
+        int deck_displayed_index = 1;
+        for (const auto& row: data["decks"].array_items())
         {
+            int display_column_offset = 0;
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(track.first.c_str());
-            for (int column = 1; column <= track.second.array_items().size(); column++)
+            ImGui::Text("%d", deck_displayed_index++);
+            for (int column = 0; column < row.array_items().size(); column++)
             {
                 if (column == key_distance_col_ix) {
                     // skip the column with the key distance
                     display_column_offset++;
                     continue;
                 }
-                ImGui::TableSetColumnIndex(column - display_column_offset);
-                if (track.second[column-1].is_number()) {
-                    ImGui::Text("%3.5g", track.second[column-1].number_value());
+                ImGui::TableSetColumnIndex(column - display_column_offset + 1);
+                if (row[column].is_number()) {
+                    ImGui::Text("%3.5g", row[column].number_value());
                 } else {
-                    ImGui::TextUnformatted(track.second[column-1].string_value().c_str());
+                    ImGui::TextUnformatted(row[column].string_value().c_str());
                 }
+            }
+            // pad missing columns (e.g. for empty rows)
+            for (int column = ImGui::TableGetColumnIndex() + 1; column < num_columns; column++) {
+                ImGui::TableSetColumnIndex(column);
+                ImGui::Text("");
             }
         }
         ImGui::EndTable();
@@ -185,7 +194,7 @@ void drawFrame(int display_w, int display_h, const json11::Json& data, json11::J
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("Browse", nullptr, window_flags);                         
 
-    drawPlayingTracks(data);
+    drawPlayingDecks(data);
     ImGui::Separator();
     drawFilters(data, send_data);
     ImGui::Separator();

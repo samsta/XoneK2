@@ -762,33 +762,34 @@ class XoneK2_DJ(ControlSurface):
     def is_selected_slot_playing(self, track_idx):
         slot = self.song().view.selected_scene.clip_slots[track_idx]
         state = ClipState.STOPPED
-        playing_file = None
         if slot.has_clip:
             if slot.clip.is_playing:
                 state = ClipState.PLAYING
-                playing_file = slot.clip.file_path
             elif slot.clip.is_triggered:
                 state = ClipState.TRIGGERED
             elif slot.clip.is_audio_clip and not slot.clip.warping:
                 # special state so we can emit warning when warping is not on
                 state = ClipState.STOPPED_NO_WARP
-        return slot.has_clip, state, playing_file
-
+        return slot.has_clip, state
 
     def update_track_playing_status(self):
         i = 0
-        playing_tracks = {}
+        playing_tracks = []
         for track in self.song().tracks:
             if i >= NUM_TRACKS:
                 return
 
-            is_selected, clip_state, playing_file = self.is_selected_slot_playing(i)
+            is_selected, clip_state = self.is_selected_slot_playing(i)
             self.clip_start_buttons[i].set_clip_selected(is_selected, clip_state)
             self.track_stop_buttons[i].set_track_playing(self.is_track_playing(track))
-            if playing_file != None:
-                playing_tracks[i] = playing_file
+
+            if track.playing_slot_index >= 0:
+                slot = track.clip_slots[track.playing_slot_index]
+                playing_tracks.append(slot.clip.file_path)
+            else:
+                playing_tracks.append(None)
             i += 1
-        self.browser_repr.set_playing_tracks(playing_tracks)
+        self.browser_repr.set_decks(playing_tracks)
 
     def clip_add_callback(self, clip, track_idx, clip_idx):
         callback = lambda : self.on_clip_playing_changed(clip, track_idx, clip_idx)

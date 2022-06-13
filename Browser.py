@@ -203,7 +203,7 @@ class BrowserRepresentation():
         self._filtered = []
         self._current_index = 0
         self._iterate_and_find_audio(browser.user_library)
-        self._playing_tracks = {}
+        self._decks = {}
 
         if os.path.exists(self.SOCKET_IN):
             os.remove(self.SOCKET_IN)
@@ -274,8 +274,10 @@ class BrowserRepresentation():
 
     def _update_key_distance(self):
         self._playing_key = None
-        for i in self._playing_tracks.keys():
-            self._playing_key = self._playing_tracks[i].open_key
+        for deck in self._decks:
+            if deck == None:
+                continue
+            self._playing_key = deck.open_key
             break 
 
         for item in self._current:
@@ -306,21 +308,23 @@ class BrowserRepresentation():
                 r.append(getattr(item, k.lower()))
             d["rows"].append(r)
 
-        for track_ix in self._playing_tracks.keys():
-            d["playing"][track_ix] = []
-            for k in d["cols"]:
-                d["playing"][track_ix].append(getattr(self._playing_tracks[track_ix], k.lower()))
+        d["decks"] = []
+        for deck in self._decks:
+            d["decks"].append([])
+            if deck != None:
+                for k in d["cols"]:
+                    d["decks"][-1].append(getattr(deck, k.lower()))
 
         try:
             self._socket.sendto(json.dumps(d, indent=1).encode('utf-8'), self.SOCKET_OUT)
         except:
             pass
 
-    def set_playing_tracks(self, playing_tracks):
-        p = {}
-        for i in playing_tracks.keys():
-            p[i] = TaggedFile(playing_tracks[i])
-        self._playing_tracks = p
+    def set_decks(self, decks):
+        d = []
+        for f in decks:
+            d.append(TaggedFile(f) if f != None else None)
+        self._decks = d
         self._update_key_distance()
         self._apply_filter()
         self._update()
