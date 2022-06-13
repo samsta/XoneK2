@@ -39,15 +39,24 @@ void drawPlayingTracks(const json11::Json& data)
     ImGui::Text("Now Playing:");
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
 
-    if (not data["playing"].is_null() and ImGui::BeginTable("playing", data["cols"].array_items().size() + 1, flags))
+    if (not data["playing"].is_null() and ImGui::BeginTable("playing", data["cols"].array_items().size(), flags))
     {
         ImGui::TableSetupColumn("Deck");
+        int key_distance_col_ix = -1;
+        int col_ix = 1;
         for (const auto& col_name: data["cols"].array_items())
         {
+            if (col_name.string_value() == "KeyDistance")
+            {
+                key_distance_col_ix = col_ix++;
+                continue;
+            }
             ImGui::TableSetupColumn(col_name.string_value().c_str());
+            col_ix++;
         }
         ImGui::TableHeadersRow();
 
+        int display_column_offset = 0;
         for (const auto& track: data["playing"].object_items())
         {
             ImGui::TableNextRow();
@@ -55,7 +64,12 @@ void drawPlayingTracks(const json11::Json& data)
             ImGui::TextUnformatted(track.first.c_str());
             for (int column = 1; column <= track.second.array_items().size(); column++)
             {
-                ImGui::TableSetColumnIndex(column);
+                if (column == key_distance_col_ix) {
+                    // skip the column with the key distance
+                    display_column_offset++;
+                    continue;
+                }
+                ImGui::TableSetColumnIndex(column - display_column_offset);
                 if (track.second[column-1].is_number()) {
                     ImGui::Text("%3.5g", track.second[column-1].number_value());
                 } else {
@@ -72,17 +86,18 @@ void drawBrowserList(const json11::Json& data)
     ImGui::Text("Browse Files:");
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
 
-    int key_distance_col_ix = -1;
-    if (not data["rows"].is_null() and ImGui::BeginTable("tracks", data["cols"].array_items().size(), flags))
+    if (not data["rows"].is_null() and ImGui::BeginTable("tracks", data["cols"].array_items().size() - 1, flags))
     {
+        int key_distance_col_ix = -1;
         int col_ix = 0;
         for (const auto& col_name: data["cols"].array_items())
         {
-            ImGui::TableSetupColumn(col_name.string_value().c_str());
             if (col_name.string_value() == "KeyDistance")
             {
-                key_distance_col_ix = col_ix;
+                key_distance_col_ix = col_ix++;
+                continue;
             }
+            ImGui::TableSetupColumn(col_name.string_value().c_str());
             col_ix++;
         }
         ImGui::TableHeadersRow();
@@ -115,10 +130,15 @@ void drawBrowserList(const json11::Json& data)
                 }
             }
 
-
+            int display_column_offset = 0;
             for (int column = 0; column < row.array_items().size(); column++)
             {
-                ImGui::TableSetColumnIndex(column);
+                if (column == key_distance_col_ix) {
+                    // skip the column with the key distance
+                    display_column_offset++;
+                    continue;
+                }
+                ImGui::TableSetColumnIndex(column - display_column_offset);
                 if (column == 0)
                 {
                     ImGui::Selectable(row[column].string_value().c_str(), row_ix == data["sel_ix"].int_value(), ImGuiSelectableFlags_SpanAllColumns);
