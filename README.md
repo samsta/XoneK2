@@ -1,6 +1,9 @@
 # XoneK2-DJ
 
-This is an Ableton Live remote script for the Allen &amp; Heath Xone:K2 audio interface/MIDI controller, targeted at DJing
+⚠️This is unlikely to be useful to anyone else (yet) as it is still early days, and it'll only work on MacOS
+
+This is an Ableton Live remote script for the Allen &amp; Heath Xone:K2 audio interface/MIDI controller, targeted at DJing,
+combined with an enhanced music file browser for Ableton Live
 
 ## How to install
 
