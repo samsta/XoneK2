@@ -216,6 +216,7 @@ class BrowserRepresentation():
         self._bpm = 100.0
         self._bpm_tolerance_percent = 5.0
         self._filter_by_bpm = True
+        self._filter_by_key = True
         self.startUi()
         self._apply_filter()
         self._update()
@@ -251,10 +252,8 @@ class BrowserRepresentation():
         self._update()
 
     def _filter(self, item):
-        if not self._filter_by_bpm:
-            return True
-
-        return item.bpm > self._bpm_lower and item.bpm < self._bpm_upper
+        return (not self._filter_by_bpm or (item.bpm > self._bpm_lower and item.bpm < self._bpm_upper)) and \
+               (not self._filter_by_key or item.keydistance < 4)
 
     def _apply_filter(self):
         try:
@@ -297,7 +296,8 @@ class BrowserRepresentation():
             "rows": [],
             "playing": {},
             "bpm_filter": self._filter_by_bpm,
-            "bpm_percent": self._bpm_tolerance_percent
+            "bpm_percent": self._bpm_tolerance_percent,
+            "key_filter": self._filter_by_key
         }
 
         for item in self._filtered:
@@ -339,12 +339,18 @@ class BrowserRepresentation():
             data = self._socket.recv(4096)
             self._log("Received: %s" % data)
             data = json.loads(data)
+            filter_changed = False
             if "bpm_filter" in data:
+                filter_changed = filter_changed or self._filter_by_bpm != data["bpm_filter"]
                 self._filter_by_bpm = data["bpm_filter"]
-                self._apply_filter()
-                self._update()
+            if "key_filter" in data:
+                filter_changed = filter_changed or self._filter_by_key != data["key_filter"]
+                self._filter_by_key = data["key_filter"]
             elif "bpm_percent" in data:
+                filter_changed = filter_changed or self._bpm_tolerance_percent != data["bpm_percent"]
                 self._bpm_tolerance_percent = data["bpm_percent"]
+
+            if filter_changed:
                 self._apply_filter()
                 self._update()
 
