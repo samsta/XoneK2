@@ -95,6 +95,8 @@ void drawBrowserList(const json11::Json& data)
     ImGui::Text("Browse Files:");
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
 
+    const ImVec4 ROW_HIGHLIGHT_COLOR(ImColor::HSV(0, 0.0f, 1.0f, 0.5f));
+
     if (not data["rows"].is_null() and ImGui::BeginTable("tracks", data["cols"].array_items().size() - 1, flags))
     {
         int key_distance_col_ix = -1;
@@ -110,6 +112,8 @@ void drawBrowserList(const json11::Json& data)
             col_ix++;
         }
         ImGui::TableHeadersRow();
+
+        ImGui::PushStyleColor(ImGuiCol_Header, ROW_HIGHLIGHT_COLOR);
 
         bool needs_color_pop = false;
         for (int row_ix = 0; row_ix < data["rows"].array_items().size(); row_ix++)
@@ -132,7 +136,7 @@ void drawBrowserList(const json11::Json& data)
                     const float green_hue = 0.23;
                     float hue = green_hue - key_distance / 20;
                     if (hue < 0) hue = 0;
-                    ImVec4 row_color = (ImVec4)ImColor::HSV(hue, 1.0f, 0.6f);
+                    ImVec4 row_color = (ImVec4)ImColor::HSV(hue, 1.0f, 0.4f);
                     ImGui::PushStyleColor(ImGuiCol_TableRowBg,    row_color);
                     ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt, row_color);
                     needs_color_pop = true;
@@ -164,10 +168,13 @@ void drawBrowserList(const json11::Json& data)
         }
 
         ImGui::EndTable();
+        // these ones are for the key difference highlighting
         if (needs_color_pop)
         {
             ImGui::PopStyleColor(2);
         }
+        // this one is for ImGui::PushStyleColor(ImGuiCol_Header, ROW_HIGHLIGHT_COLOR);
+        ImGui::PopStyleColor();
     }    
 }
 
