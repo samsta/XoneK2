@@ -274,11 +274,8 @@ class BrowserRepresentation():
 
     def _update_key_distance(self):
         self._playing_key = None
-        for deck in self._decks:
-            if deck == None:
-                continue
-            self._playing_key = deck.open_key
-            break 
+        if self._master_deck != None:
+            self._playing_key = self._master_deck.open_key
 
         for item in self._current:
             item.updateDistanceTo(self._playing_key)
@@ -308,23 +305,38 @@ class BrowserRepresentation():
                 r.append(getattr(item, k.lower()))
             d["rows"].append(r)
 
+        d["master_deck"] = -1
         d["decks"] = []
+        deck_index = 0
         for deck in self._decks:
             d["decks"].append([])
             if deck != None:
                 for k in d["cols"]:
                     d["decks"][-1].append(getattr(deck, k.lower()))
+                if deck == self._master_deck:
+                    d["master_deck"] = deck_index
+            deck_index = deck_index + 1
 
         try:
             self._socket.sendto(json.dumps(d, indent=1).encode('utf-8'), self.SOCKET_OUT)
         except:
             pass
 
-    def set_decks(self, decks):
+    def set_decks(self, decks, master_deck_index):
         d = []
         for f in decks:
             d.append(TaggedFile(f) if f != None else None)
         self._decks = d
+        try:
+            self._master_deck = self._decks[master_deck_index]
+        except:
+            # find first deck that isn't none
+            self._master_deck = None
+            for deck in self._decks:
+                if deck != None:
+                    self._master_deck = deck
+                    break
+
         self._update_key_distance()
         self._apply_filter()
         self._update()

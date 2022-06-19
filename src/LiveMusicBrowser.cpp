@@ -60,12 +60,13 @@ void drawPlayingDecks(const json11::Json& data)
 
         num_columns++; // account for the 'deck' column
         int deck_displayed_index = 1;
+        int row_index = 0;
         for (const auto& row: data["decks"].array_items())
         {
             int display_column_offset = 0;
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::Text("%d", deck_displayed_index++);
+            ImGui::Selectable(std::to_string(deck_displayed_index++).c_str(), row_index == data["master_deck"].number_value(), ImGuiSelectableFlags_SpanAllColumns);
             for (int column = 0; column < row.array_items().size(); column++)
             {
                 if (column == key_distance_col_ix) {
@@ -74,6 +75,7 @@ void drawPlayingDecks(const json11::Json& data)
                     continue;
                 }
                 ImGui::TableSetColumnIndex(column - display_column_offset + 1);
+
                 if (row[column].is_number()) {
                     ImGui::Text("%3.5g", row[column].number_value());
                 } else {
@@ -85,6 +87,7 @@ void drawPlayingDecks(const json11::Json& data)
                 ImGui::TableSetColumnIndex(column);
                 ImGui::Text("");
             }
+            row_index++;
         }
         ImGui::EndTable();
     }    

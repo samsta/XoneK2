@@ -775,6 +775,8 @@ class XoneK2_DJ(ControlSurface):
     def update_track_playing_status(self):
         i = 0
         playing_tracks = []
+        master_deck_index = -1
+        max_play_time = 0
         for track in self.song().tracks:
             if i >= NUM_TRACKS:
                 return
@@ -786,10 +788,17 @@ class XoneK2_DJ(ControlSurface):
             if track.playing_slot_index >= 0:
                 slot = track.clip_slots[track.playing_slot_index]
                 playing_tracks.append(slot.clip.file_path)
+
+                # the master deck is the one that has been playing for the longest time
+                if (slot.clip.playing_position > max_play_time):
+                    max_play_time = slot.clip.playing_position
+                    master_deck_index = i
+
             else:
                 playing_tracks.append(None)
+
             i += 1
-        self.browser_repr.set_decks(playing_tracks)
+        self.browser_repr.set_decks(playing_tracks, master_deck_index)
 
     def clip_add_callback(self, clip, track_idx, clip_idx):
         callback = lambda : self.on_clip_playing_changed(clip, track_idx, clip_idx)
