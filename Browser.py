@@ -217,6 +217,9 @@ class BrowserRepresentation():
         self._bpm_tolerance_percent = 5.0
         self._filter_by_bpm = True
         self._filter_by_key = True
+        self._filter_artist = ""
+        self._filter_title = ""
+        self._filter_genre = ""
         self._start_ui()
         self._apply_filter()
         self._update()
@@ -259,6 +262,13 @@ class BrowserRepresentation():
         self._update()
 
     def _filter(self, item):
+        if self._filter_artist != "" and not self._filter_artist in item.artist.lower():
+            return False
+        if self._filter_title != "" and not self._filter_title in item.title.lower():
+            return False
+        if self._filter_genre != "" and not self._filter_genre in item.genre.lower():
+            return False
+
         return (not self._filter_by_bpm or (item.bpm > self._bpm_lower and item.bpm < self._bpm_upper)) and \
                (not self._filter_by_key or item.keydistance < 4)
 
@@ -380,6 +390,15 @@ class BrowserRepresentation():
                 self.set_current_index(data["load_ix"])
                 self.load()
                 self._update()
+            elif "filter_artist" in data:
+                self._filter_artist = data["filter_artist"].lower()
+                filter_changed = filter_changed or True
+            elif "filter_title" in data:
+                self._filter_title = data["filter_title"].lower()
+                filter_changed = filter_changed or True
+            elif "filter_genre" in data:
+                self._filter_genre = data["filter_genre"].lower()
+                filter_changed = filter_changed or True
 
             if filter_changed:
                 self._apply_filter()

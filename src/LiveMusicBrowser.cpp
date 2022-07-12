@@ -5,6 +5,8 @@ static bool filter_bpm = false;
 static bool filter_key = false;
 static float bpm_percentage = 5;
 
+static std::map<std::string, std::string> filters;
+
 void drawFilters(const json11::Json& data, json11::Json& send_data)
 {
     filter_key = data["key_filter"].bool_value();
@@ -112,9 +114,46 @@ void drawBrowserList(const json11::Json& data, json11::Json& send_data)
                 continue;
             }
             ImGui::TableSetupColumn(col_name.string_value().c_str());
+            
             col_ix++;
         }
-        ImGui::TableHeadersRow();
+        // Instead of calling TableHeadersRow() we'll submit custom headers ourselves
+        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+        col_ix = 0;
+        for (const auto& col_name: data["cols"].array_items())
+        {
+            if (col_name.string_value() == "KeyDistance")
+            {
+                continue;
+            }
+
+            ImGui::TableSetColumnIndex(col_ix);
+            ImGui::TableHeader(col_name.string_value().c_str());
+            if (col_name.string_value() == "Artist" or
+                col_name.string_value() == "Title" or
+                col_name.string_value() == "Genre")
+            {
+                ImGui::PushID(col_ix);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+                char filter[128] = "";
+                strncpy(filter, filters[col_name.string_value()].c_str(), sizeof(filter));
+                ImGui::InputTextWithHint(
+                        (std::string("##search") + col_name.string_value()).c_str(),
+                        "search",
+                        filter, IM_ARRAYSIZE(filter));
+
+                if (filters[col_name.string_value()] != filter)
+                {
+                    std::string col_name_lower = col_name.string_value();
+                    col_name_lower[0] = std::tolower(col_name_lower[0]);
+                    send_data = json11::Json::object{{std::string("filter_") + col_name_lower, json11::Json(filter)}};
+                    filters[col_name.string_value()] = filter;
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopID();
+            }
+            col_ix++;
+        }
 
         ImGui::PushStyleColor(ImGuiCol_Header, ROW_HIGHLIGHT_COLOR);
 
