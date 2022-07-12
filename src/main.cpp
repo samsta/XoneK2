@@ -73,6 +73,9 @@ extern void drawFrame(int display_w, int display_h, const json11::Json& data, js
 
 int main(int, char**)
 {
+    // turn off line buffering to stdout to ease debugging
+    setlinebuf(stdout);
+
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())

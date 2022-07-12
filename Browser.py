@@ -231,11 +231,18 @@ class BrowserRepresentation():
     def scroll_horizontal(self, right_not_left):
         pass
 
+    def set_current_index(self, index):
+        if index >= len(self._filtered):
+            index = len(self._filtered) - 1
+        elif index < 0:
+            index = 0
+        self._current_index = index
+
     def scroll_vertical(self, down_not_up):
-        if down_not_up and self._current_index < len(self._filtered) - 1:
-            self._current_index = self._current_index + 1
-        elif not down_not_up and self._current_index > 0:
-            self._current_index = self._current_index - 1
+        if down_not_up:
+            self.set_current_index(self._current_index + 1)
+        else:
+            self.set_current_index(self._current_index - 1)
         self._update()
 
     def preview(self):
@@ -343,7 +350,7 @@ class BrowserRepresentation():
 
     def _start_ui(self):
         pwd = pathlib.Path(__file__).parent.resolve()
-        os.system("'%s/build/LiveMusicBrowser' &" % pwd)
+        os.system("'%s/build/LiveMusicBrowser' > /tmp/LiveMusicBrowser.log &" % pwd)
         timeout = 10
         while (timeout > 0 and not os.path.exists(self.SOCKET_OUT)):
             time.sleep(0.1)
@@ -365,6 +372,14 @@ class BrowserRepresentation():
             elif "bpm_percent" in data:
                 filter_changed = filter_changed or self._bpm_tolerance_percent != data["bpm_percent"]
                 self._bpm_tolerance_percent = data["bpm_percent"]
+            elif "preview_ix" in data:
+                self.set_current_index(data["preview_ix"])
+                self.preview()
+                self._update()
+            elif "load_ix" in data:
+                self.set_current_index(data["load_ix"])
+                self.load()
+                self._update()
 
             if filter_changed:
                 self._apply_filter()

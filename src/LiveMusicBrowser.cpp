@@ -93,7 +93,7 @@ void drawPlayingDecks(const json11::Json& data)
     }    
 }
 
-void drawBrowserList(const json11::Json& data)
+void drawBrowserList(const json11::Json& data, json11::Json& send_data)
 {
     ImGui::Text("Browse Files:");
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
@@ -157,15 +157,19 @@ void drawBrowserList(const json11::Json& data)
                 ImGui::TableSetColumnIndex(column - display_column_offset);
                 if (column == 0)
                 {
-                    ImGui::Selectable(row[column].string_value().c_str(), row_ix == data["sel_ix"].int_value(), ImGuiSelectableFlags_SpanAllColumns);
-                }
-                else
-                {
-                    if (row[column].is_number()) {
-                        ImGui::Text("%3.5g", row[column].number_value());
-                    } else {
-                        ImGui::TextUnformatted(row[column].string_value().c_str());
+                    std::string unique_id = "##track" + std::to_string(row_ix); 
+                    if (ImGui::Selectable(unique_id.c_str(), row_ix == data["sel_ix"].int_value(), 
+                                          ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick))
+                    {
+                        send_data = json11::Json::object{{ImGui::IsMouseDoubleClicked(0) ? "load_ix" : "preview_ix", json11::Json(row_ix)}};
                     }
+                    ImGui::SameLine();
+                }
+
+                if (row[column].is_number()) {
+                    ImGui::Text("%3.5g", row[column].number_value());
+                } else {
+                    ImGui::TextUnformatted(row[column].string_value().c_str());
                 }
             }
         }
@@ -208,7 +212,7 @@ void drawFrame(int display_w, int display_h, const json11::Json& data, json11::J
     ImGui::Separator();
     drawFilters(data, send_data);
     ImGui::Separator();
-    drawBrowserList(data);
+    drawBrowserList(data, send_data);
 
     ImGui::End();
     ImGui::PopStyleVar();
