@@ -188,7 +188,7 @@ class Fader(SliderElement):
             self.release_parameter()
 
         if self._mapped_param != None:
-            self._mapped_param.value = value * self._max / 127
+            self._mapped_param.value = self._max * ((value / 127.0) ** 0.5)
 
 def knob(cc):
     return EncoderElement(MIDI_CC_TYPE, CHANNEL, cc, Live.MidiMap.MapMode.absolute)
